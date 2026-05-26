@@ -1,0 +1,28 @@
+# OS and editor files
+.DS_Store
+.idea/
+.vscode/
+*.sw?
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Local environment files
+.env
+.env.*
+*.local
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/*.log
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+
+# Backend
+backend/kelimeoyunu/target/
+backend/kelimeoyunu/build/
