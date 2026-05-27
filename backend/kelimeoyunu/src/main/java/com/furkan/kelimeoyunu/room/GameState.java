@@ -1,5 +1,7 @@
 package com.furkan.kelimeoyunu.room;
 
 public enum GameState {
-	WAITING
+	WAITING,
+	IN_PROGRESS,
+	FINISHED
 }

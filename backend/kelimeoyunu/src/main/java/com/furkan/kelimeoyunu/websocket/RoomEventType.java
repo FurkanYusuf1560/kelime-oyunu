@@ -1,0 +1,13 @@
+package com.furkan.kelimeoyunu.websocket;
+
+public enum RoomEventType {
+	PLAYER_JOINED,
+	PLAYER_LEFT,
+	ROOM_STATE,
+	GAME_STARTED,
+	LETTER_SELECTED,
+	PLAYER_FINISHED,
+	TIMER_STARTED,
+	TIMER_UPDATED,
+	GAME_ENDED
+}

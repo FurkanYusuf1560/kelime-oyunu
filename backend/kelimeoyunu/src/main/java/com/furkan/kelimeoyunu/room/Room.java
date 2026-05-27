@@ -13,9 +13,12 @@ public class Room {
 	private final String code;
 	private final Instant createdAt;
 	private final int maxPlayers;
-	private final GameState gameState;
 	private final Map<String, String> players = new ConcurrentHashMap<>();
+	private GameState gameState;
 	private String hostUsername;
+	private String selectedLetter;
+	private String finishedByUsername;
+	private int remainingSeconds;
 
 	public Room(String code, Instant createdAt) {
 		this.code = code;
@@ -44,6 +47,18 @@ public class Room {
 		return hostUsername;
 	}
 
+	public String selectedLetter() {
+		return selectedLetter;
+	}
+
+	public String finishedByUsername() {
+		return finishedByUsername;
+	}
+
+	public int remainingSeconds() {
+		return remainingSeconds;
+	}
+
 	public synchronized JoinRoomResult joinPlayer(String username) {
 		String normalizedUsername = normalizeUsername(username);
 
@@ -63,10 +78,77 @@ public class Room {
 		return JoinRoomResult.JOINED;
 	}
 
+	public synchronized boolean leavePlayer(String username) {
+		String removedUsername = players.remove(normalizeUsername(username));
+		if (removedUsername == null) {
+			return false;
+		}
+
+		if (removedUsername.equals(hostUsername)) {
+			hostUsername = nextHostUsername();
+		}
+
+		return true;
+	}
+
+	public boolean hasPlayers() {
+		return !players.isEmpty();
+	}
+
+	public boolean hasPlayer(String username) {
+		return players.containsKey(normalizeUsername(username));
+	}
+
+	public synchronized boolean startGame(String selectedLetter) {
+		if (gameState != GameState.WAITING) {
+			return false;
+		}
+
+		this.selectedLetter = selectedLetter;
+		this.gameState = GameState.IN_PROGRESS;
+		return true;
+	}
+
+	public synchronized boolean startTimer(String username, int remainingSeconds) {
+		if (gameState != GameState.IN_PROGRESS || finishedByUsername != null) {
+			return false;
+		}
+
+		this.finishedByUsername = username;
+		this.remainingSeconds = remainingSeconds;
+		return true;
+	}
+
+	public synchronized boolean updateRemainingSeconds(int remainingSeconds) {
+		if (gameState != GameState.IN_PROGRESS || finishedByUsername == null) {
+			return false;
+		}
+
+		this.remainingSeconds = remainingSeconds;
+		return true;
+	}
+
+	public synchronized boolean finishRound() {
+		if (gameState != GameState.IN_PROGRESS) {
+			return false;
+		}
+
+		this.remainingSeconds = 0;
+		this.gameState = GameState.FINISHED;
+		return true;
+	}
+
 	public List<String> players() {
 		return players.values().stream()
 				.sorted(String.CASE_INSENSITIVE_ORDER)
 				.toList();
+	}
+
+	private String nextHostUsername() {
+		return players.values().stream()
+				.sorted(String.CASE_INSENSITIVE_ORDER)
+				.findFirst()
+				.orElse(null);
 	}
 
 	private String normalizeUsername(String username) {

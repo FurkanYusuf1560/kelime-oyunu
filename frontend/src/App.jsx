@@ -1,5 +1,10 @@
-import { useState } from 'react'
+import { Client } from '@stomp/stompjs'
+import SockJS from 'sockjs-client'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
+
+const GAME_CATEGORIES = ['Name', 'City', 'Country', 'Animal', 'Plant', 'Object']
+const ROUND_SECONDS = 90
 
 function App() {
   const [createdRoomCode, setCreatedRoomCode] = useState('')
@@ -9,7 +14,36 @@ function App() {
   const [joinStatus, setJoinStatus] = useState('idle')
   const [joinMessage, setJoinMessage] = useState('')
   const [gameRoom, setGameRoom] = useState(null)
+  const [roomConnection, setRoomConnection] = useState(null)
   const [startMessage, setStartMessage] = useState('')
+
+  const handleRoomUpdate = useCallback((event, connection) => {
+    if (!event.roomCode || event.roomCode !== connection.roomCode) {
+      return
+    }
+
+    setGameRoom({
+      roomCode: event.roomCode,
+      currentUsername: connection.username,
+      hostUsername: event.hostUsername ?? event.host,
+      maxPlayers: event.maxPlayers,
+      gameState: event.gameState ?? event.gameStatus,
+      selectedLetter: event.selectedLetter ?? null,
+      players: event.players ?? [],
+    })
+    setJoinMessage('')
+    setJoinStatus('success')
+  }, [])
+
+  const handleConnectionError = useCallback((message) => {
+    setJoinMessage(message)
+    setJoinStatus((current) => (current === 'success' ? current : 'error'))
+  }, [])
+
+  const roomSocket = useRoomSocket(roomConnection, {
+    onRoomUpdate: handleRoomUpdate,
+    onConnectionError: handleConnectionError,
+  })
 
   async function handleCreateRoom(event) {
     event.preventDefault()
@@ -72,8 +106,10 @@ function App() {
         hostUsername: data.hostUsername,
         maxPlayers: data.maxPlayers,
         gameState: data.gameState,
+        selectedLetter: data.selectedLetter ?? null,
         players: data.players,
       })
+      setRoomConnection({ roomCode: data.roomCode, username: data.username })
       setJoinMessage('')
       setJoinStatus('success')
     } catch (error) {
@@ -87,6 +123,8 @@ function App() {
   }
 
   function handleLeaveRoom() {
+    roomSocket.leaveRoom()
+    setRoomConnection(null)
     setGameRoom(null)
     setStartMessage('')
     setJoinStatus('idle')
@@ -94,13 +132,16 @@ function App() {
   }
 
   function handleStartGame() {
-    setStartMessage('Game start is ready to connect to the backend.')
+    roomSocket.startGame()
+    setStartMessage('')
   }
 
   if (gameRoom) {
     return (
       <GameRoomPage
         room={gameRoom}
+        connectionStatus={roomSocket.status}
+        connectionError={roomSocket.error}
         startMessage={startMessage}
         onLeaveRoom={handleLeaveRoom}
         onStartGame={handleStartGame}
@@ -203,8 +244,123 @@ function App() {
   )
 }
 
-function GameRoomPage({ room, startMessage, onLeaveRoom, onStartGame }) {
+function useRoomSocket(roomConnection, { onRoomUpdate, onConnectionError }) {
+  const clientRef = useRef(null)
+  const roomConnectionRef = useRef(null)
+  const intentionalDisconnectRef = useRef(false)
+  const [status, setStatus] = useState('idle')
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    roomConnectionRef.current = roomConnection
+  }, [roomConnection])
+
+  useEffect(() => {
+    if (!roomConnection) {
+      intentionalDisconnectRef.current = true
+      clientRef.current?.deactivate()
+      clientRef.current = null
+      return undefined
+    }
+
+    intentionalDisconnectRef.current = false
+
+    const client = new Client({
+      reconnectDelay: 3000,
+      webSocketFactory: () => new SockJS('/ws'),
+      debug: () => {},
+      onConnect: () => {
+        setStatus('connected')
+        setError('')
+
+        client.subscribe(`/topic/room/${roomConnection.roomCode}`, (message) => {
+          try {
+            const event = JSON.parse(message.body)
+            onRoomUpdate(event, roomConnection)
+          } catch {
+            setError('Room update could not be read.')
+          }
+        })
+
+        client.publish({
+          destination: '/app/join',
+          body: JSON.stringify(roomConnection),
+        })
+      },
+      onStompError: (frame) => {
+        const message = frame.headers.message || 'Room connection failed.'
+        setStatus('error')
+        setError(message)
+        onConnectionError(message)
+      },
+      onWebSocketClose: () => {
+        if (!intentionalDisconnectRef.current) {
+          setStatus('reconnecting')
+          setError('Connection lost. Reconnecting...')
+        }
+      },
+      onWebSocketError: () => {
+        setStatus('error')
+        setError('Room connection failed.')
+        onConnectionError('Room connection failed.')
+      },
+    })
+
+    clientRef.current = client
+    client.activate()
+
+    return () => {
+      intentionalDisconnectRef.current = true
+      client.deactivate()
+    }
+  }, [onConnectionError, onRoomUpdate, roomConnection])
+
+  const leaveRoom = useCallback(() => {
+    const client = clientRef.current
+    const currentRoom = roomConnectionRef.current
+
+    intentionalDisconnectRef.current = true
+
+    if (client?.connected && currentRoom) {
+      client.publish({
+        destination: '/app/leave',
+        body: JSON.stringify(currentRoom),
+      })
+    }
+
+    client?.deactivate()
+    clientRef.current = null
+    setStatus('idle')
+    setError('')
+  }, [])
+
+  const startGame = useCallback(() => {
+    const client = clientRef.current
+    const currentRoom = roomConnectionRef.current
+
+    if (client?.connected && currentRoom) {
+      client.publish({
+        destination: '/app/start',
+        body: JSON.stringify(currentRoom),
+      })
+    }
+  }, [])
+
+  const visibleStatus = roomConnection && status === 'idle' ? 'connecting' : status
+
+  return { error, leaveRoom, startGame, status: visibleStatus }
+}
+
+function GameRoomPage({
+  room,
+  connectionStatus,
+  connectionError,
+  startMessage,
+  onLeaveRoom,
+  onStartGame,
+}) {
   const isHost = room.currentUsername === room.hostUsername
+  const isInProgress = room.gameState === 'IN_PROGRESS'
   const playerCount = room.players.length
   const maxPlayers = room.maxPlayers || playerCount
 
@@ -219,10 +375,11 @@ function GameRoomPage({ room, startMessage, onLeaveRoom, onStartGame }) {
             <h1 className="mt-2 text-3xl font-semibold leading-tight text-[var(--text-h)] sm:text-4xl">
               Room {room.roomCode}
             </h1>
+            <ConnectionStatus status={connectionStatus} error={connectionError} />
           </div>
 
           <div className="flex flex-wrap gap-3">
-            {isHost && (
+            {isHost && !isInProgress && (
               <button
                 type="button"
                 onClick={onStartGame}
@@ -242,42 +399,44 @@ function GameRoomPage({ room, startMessage, onLeaveRoom, onStartGame }) {
         </header>
 
         <section className="grid gap-6 lg:grid-cols-[1fr_360px]">
-          <div className="rounded-lg border border-[var(--border)] bg-[var(--panel-bg)] p-5 sm:p-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <p className="text-xs font-bold uppercase text-[var(--accent)]">
-                  Players
-                </p>
-                <h2 className="mt-2 text-2xl font-semibold text-[var(--text-h)]">
-                  Connected players
-                </h2>
-              </div>
-              <div className="rounded-md bg-[var(--result-bg)] px-4 py-3 text-sm font-bold text-[var(--text-h)]">
-                {playerCount} / {maxPlayers} players
-              </div>
-            </div>
-
-            <PlayerList
+          {isInProgress ? (
+            <GameScreen
+              key={`${room.roomCode}-${room.selectedLetter}`}
+              selectedLetter={room.selectedLetter}
+            />
+          ) : (
+            <PlayersPanel
+              playerCount={playerCount}
+              maxPlayers={maxPlayers}
               players={room.players}
               hostUsername={room.hostUsername}
               currentUsername={room.currentUsername}
             />
-          </div>
+          )}
 
           <aside className="flex flex-col gap-4">
             <RoomInfoCard label="Room code" value={room.roomCode} />
             <RoomInfoCard label="Host" value={room.hostUsername} />
             <RoomInfoCard label="You" value={room.currentUsername} />
+            {isInProgress && (
+              <RoomInfoCard label="Players" value={`${playerCount} / ${maxPlayers}`} />
+            )}
 
             <div className="rounded-lg border border-[var(--border)] bg-[var(--panel-bg)] p-5">
               <p className="text-xs font-bold uppercase text-[var(--accent)]">
                 Status
               </p>
               <p className="mt-3 text-lg font-semibold text-[var(--text-h)]">
-                {isHost ? 'Ready when you are.' : 'Waiting for the host to start.'}
+                {isInProgress
+                  ? 'Round in progress.'
+                  : isHost
+                    ? 'Ready when you are.'
+                    : 'Waiting for the host to start.'}
               </p>
               <p className="mt-2 text-sm">
-                {isHost
+                {isInProgress
+                  ? 'Submit your answers before the timer closes.'
+                  : isHost
                   ? 'Share the room code, wait for players, then start the game.'
                   : 'Keep this page open while the host prepares the game.'}
               </p>
@@ -291,6 +450,168 @@ function GameRoomPage({ room, startMessage, onLeaveRoom, onStartGame }) {
         </section>
       </div>
     </main>
+  )
+}
+
+function PlayersPanel({ playerCount, maxPlayers, players, hostUsername, currentUsername }) {
+  return (
+    <div className="rounded-lg border border-[var(--border)] bg-[var(--panel-bg)] p-5 sm:p-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase text-[var(--accent)]">
+            Players
+          </p>
+          <h2 className="mt-2 text-2xl font-semibold text-[var(--text-h)]">
+            Connected players
+          </h2>
+        </div>
+        <div className="rounded-md bg-[var(--result-bg)] px-4 py-3 text-sm font-bold text-[var(--text-h)]">
+          {playerCount} / {maxPlayers} players
+        </div>
+      </div>
+
+      <PlayerList
+        players={players}
+        hostUsername={hostUsername}
+        currentUsername={currentUsername}
+      />
+    </div>
+  )
+}
+
+function GameScreen({ selectedLetter }) {
+  const [answers, setAnswers] = useState(() => createEmptyAnswers())
+  const [submitted, setSubmitted] = useState(false)
+
+  function updateAnswer(category, value) {
+    setAnswers((current) => ({ ...current, [category]: value }))
+  }
+
+  function handleFinish(event) {
+    event.preventDefault()
+    setSubmitted(true)
+  }
+
+  return (
+    <form
+      className="rounded-lg border border-[var(--border)] bg-[var(--panel-bg)] p-5 sm:p-6"
+      onSubmit={handleFinish}
+    >
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <LetterDisplay letter={selectedLetter} />
+        <Countdown initialSeconds={ROUND_SECONDS} isPaused={submitted} />
+      </div>
+
+      <div className="mt-6 grid gap-4 md:grid-cols-2">
+        {GAME_CATEGORIES.map((category) => (
+          <label
+            className="grid gap-2 text-sm font-bold text-[var(--text-h)]"
+            key={category}
+          >
+            <span>{category}</span>
+            <input
+              className="min-h-12 rounded-md border border-[var(--border)] bg-[var(--input-bg)] px-4 text-[var(--text-h)] outline-none transition focus:border-[var(--accent)] focus:ring-4 focus:ring-[var(--accent-bg)] disabled:opacity-70"
+              disabled={submitted}
+              maxLength={32}
+              onChange={(event) => updateAnswer(category, event.target.value)}
+              type="text"
+              value={answers[category]}
+            />
+          </label>
+        ))}
+      </div>
+
+      <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="min-h-6 text-sm font-semibold text-[var(--success)]">
+          {submitted ? 'Answers submitted.' : ''}
+        </p>
+        <button
+          className="min-h-11 rounded-md bg-[var(--button-bg)] px-6 text-sm font-bold text-white transition hover:-translate-y-0.5 disabled:cursor-default disabled:opacity-60 disabled:hover:translate-y-0 dark:text-slate-950"
+          disabled={submitted}
+          type="submit"
+        >
+          Finish
+        </button>
+      </div>
+    </form>
+  )
+}
+
+function LetterDisplay({ letter }) {
+  return (
+    <section aria-label="Selected letter">
+      <p className="text-xs font-bold uppercase text-[var(--accent)]">
+        Selected letter
+      </p>
+      <p className="mt-2 font-mono text-6xl font-bold leading-none text-[var(--text-h)]">
+        {letter || '?'}
+      </p>
+    </section>
+  )
+}
+
+function Countdown({ initialSeconds, isPaused }) {
+  const [secondsLeft, setSecondsLeft] = useState(initialSeconds)
+
+  useEffect(() => {
+    if (isPaused || secondsLeft <= 0) {
+      return undefined
+    }
+
+    const timerId = window.setInterval(() => {
+      setSecondsLeft((current) => Math.max(current - 1, 0))
+    }, 1000)
+
+    return () => window.clearInterval(timerId)
+  }, [isPaused, secondsLeft])
+
+  const minutes = String(Math.floor(secondsLeft / 60)).padStart(2, '0')
+  const seconds = String(secondsLeft % 60).padStart(2, '0')
+
+  return (
+    <section
+      aria-label="Countdown timer"
+      className="min-w-40 rounded-lg border border-[var(--border)] bg-[var(--result-bg)] p-4 text-center"
+    >
+      <p className="text-xs font-bold uppercase text-[var(--accent)]">
+        Countdown
+      </p>
+      <p className="mt-2 font-mono text-3xl font-bold leading-none text-[var(--text-h)]">
+        {minutes}:{seconds}
+      </p>
+    </section>
+  )
+}
+
+function createEmptyAnswers() {
+  return Object.fromEntries(GAME_CATEGORIES.map((category) => [category, '']))
+}
+
+function ConnectionStatus({ status, error }) {
+  const statusText = {
+    connected: 'Live',
+    connecting: 'Connecting',
+    reconnecting: 'Reconnecting',
+    error: 'Offline',
+    idle: 'Offline',
+  }[status]
+
+  const statusClass =
+    status === 'connected'
+      ? 'bg-[var(--accent-bg)] text-[var(--accent)]'
+      : 'bg-[var(--result-bg)] text-[var(--danger)]'
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2">
+      <span className={`rounded-full px-3 py-1 text-xs font-bold ${statusClass}`}>
+        {statusText}
+      </span>
+      {error && (
+        <span className="text-sm font-semibold text-[var(--danger)]">
+          {error}
+        </span>
+      )}
+    </div>
   )
 }
 

@@ -2,10 +2,14 @@ package com.furkan.kelimeoyunu.room;
 
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.matchesPattern;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.time.Clock;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,6 +17,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+
+import com.furkan.kelimeoyunu.websocket.RoomEventPublisher;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -112,6 +118,90 @@ class RoomControllerTests {
 		roomService.joinRoom(room.code(), "ada");
 
 		org.assertj.core.api.Assertions.assertThat(room.hostUsername()).isEqualTo("furkan");
+	}
+
+	@Test
+	void leaveRoomRemovesPlayerAndReassignsHost() {
+		Room room = roomService.createRoom();
+		roomService.joinRoom(room.code(), "furkan");
+		roomService.joinRoom(room.code(), "ada");
+
+		roomService.leaveRoom(room.code(), "furkan");
+
+		org.assertj.core.api.Assertions.assertThat(room.players()).containsExactly("ada");
+		org.assertj.core.api.Assertions.assertThat(room.hostUsername()).isEqualTo("ada");
+	}
+
+	@Test
+	void joinRoomPublishesPlayerJoinedEvent() {
+		RoomEventPublisher publisher = mock(RoomEventPublisher.class);
+		RoomService service = new RoomService(Clock.systemUTC(), publisher);
+		Room room = service.createRoom();
+
+		service.joinRoom(room.code(), "furkan");
+
+		verify(publisher).playerJoined(room, "furkan");
+	}
+
+	@Test
+	void leaveRoomPublishesPlayerLeftEvent() {
+		RoomEventPublisher publisher = mock(RoomEventPublisher.class);
+		RoomService service = new RoomService(Clock.systemUTC(), publisher);
+		Room room = service.createRoom();
+		service.joinRoom(room.code(), "furkan");
+
+		service.leaveRoom(room.code(), "furkan");
+
+		verify(publisher).playerLeft(room, "furkan");
+	}
+
+	@Test
+	void synchronizeRoomPublishesRoomStateEvent() {
+		RoomEventPublisher publisher = mock(RoomEventPublisher.class);
+		RoomService service = new RoomService(Clock.systemUTC(), publisher);
+		Room room = service.createRoom();
+
+		service.synchronizeRoom(room.code());
+
+		verify(publisher).roomState(room);
+	}
+
+	@Test
+	void hostCanStartGame() throws Exception {
+		String roomCode = createRoom();
+		roomService.joinRoom(roomCode, "furkan");
+
+		mockMvc.perform(post("/rooms/{roomCode}/start", roomCode)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"username\":\"furkan\"}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.roomCode").value(roomCode))
+				.andExpect(jsonPath("$.gameStatus").value("IN_PROGRESS"))
+				.andExpect(jsonPath("$.selectedLetter", matchesPattern("[A-Z]")));
+	}
+
+	@Test
+	void nonHostCannotStartGame() throws Exception {
+		String roomCode = createRoom();
+		roomService.joinRoom(roomCode, "furkan");
+		roomService.joinRoom(roomCode, "ada");
+
+		mockMvc.perform(post("/rooms/{roomCode}/start", roomCode)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"username\":\"ada\"}"))
+				.andExpect(status().isForbidden());
+	}
+
+	@Test
+	void startedGameCannotStartAgain() throws Exception {
+		String roomCode = createRoom();
+		roomService.joinRoom(roomCode, "furkan");
+		roomService.startGame(roomCode, "furkan");
+
+		mockMvc.perform(post("/rooms/{roomCode}/start", roomCode)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"username\":\"furkan\"}"))
+				.andExpect(status().isConflict());
 	}
 
 	@Test

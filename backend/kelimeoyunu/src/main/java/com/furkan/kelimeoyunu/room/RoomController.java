@@ -44,4 +44,13 @@ public class RoomController {
 				room.hostUsername(),
 				room.gameState()));
 	}
+
+	@PostMapping("/rooms/{roomCode}/start")
+	public ResponseEntity<StartGameResponse> startGame(@PathVariable String roomCode, @RequestBody StartGameRequest request) {
+		Room room = roomService.startGame(roomCode, request.username());
+		return ResponseEntity.ok(new StartGameResponse(
+				room.code(),
+				room.gameState(),
+				room.selectedLetter()));
+	}
 }
