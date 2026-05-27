@@ -10,7 +10,7 @@ When building APIs:
 Naming:
 - GET /rooms/{code}
 - POST /rooms
-- POST /rooms/join
+- POST /rooms/{code}/join
 
 Best Practices:
 - Keep controllers thin

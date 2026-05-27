@@ -158,12 +158,8 @@
 }
 
 .join-message.error,
-.create-panel .result-box span {
+.result-box.error {
   color: var(--danger);
-}
-
-.create-panel .result-box span:first-child {
-  color: var(--text);
 }
 
 @media (max-width: 760px) {

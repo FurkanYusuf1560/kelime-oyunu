@@ -4,7 +4,6 @@ import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.http.HttpStatus;
@@ -32,7 +31,7 @@ public class RoomService {
 	public Room createRoom() {
 		while (true) {
 			String code = generateRoomCode();
-			Room room = new Room(code, Instant.now(clock), ConcurrentHashMap.newKeySet());
+			Room room = new Room(code, Instant.now(clock));
 
 			if (rooms.putIfAbsent(code, room) == null) {
 				return room;
@@ -55,15 +54,30 @@ public class RoomService {
 		}
 
 		String normalizedUsername = username.trim();
-		if (!room.players().add(normalizedUsername)) {
+		JoinRoomResult result = room.joinPlayer(normalizedUsername);
+
+		if (result == JoinRoomResult.DUPLICATE_USERNAME) {
 			throw new ResponseStatusException(HttpStatus.CONFLICT, "Username already exists in room");
+		}
+
+		if (result == JoinRoomResult.ROOM_FULL) {
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "Room is full");
 		}
 
 		return room;
 	}
 
-	public Set<String> getPlayers(Room room) {
-		return Set.copyOf(room.players());
+	public Room getRoom(String roomCode) {
+		if (roomCode == null || roomCode.isBlank()) {
+			throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found");
+		}
+
+		Room room = rooms.get(roomCode.trim().toUpperCase());
+		if (room == null) {
+			throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found");
+		}
+
+		return room;
 	}
 
 	private String generateRoomCode() {
