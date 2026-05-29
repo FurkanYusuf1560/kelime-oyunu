@@ -205,6 +205,110 @@ class RoomControllerTests {
 	}
 
 	@Test
+	void playerCanSubmitAnswers() throws Exception {
+		String roomCode = createRoom();
+		roomService.joinRoom(roomCode, "furkan");
+		roomService.startGame(roomCode, "furkan");
+
+		mockMvc.perform(post("/rooms/{roomCode}/answers", roomCode)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"username\":\"furkan\",\"answers\":{\"Name\":\"Ada\",\"City\":\"Ankara\"}}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.roomCode").value(roomCode))
+				.andExpect(jsonPath("$.username").value("furkan"))
+				.andExpect(jsonPath("$.answers.Name").value("Ada"))
+				.andExpect(jsonPath("$.answers.City").value("Ankara"))
+				.andExpect(jsonPath("$.submittedPlayers", containsInAnyOrder("furkan")))
+				.andExpect(jsonPath("$.roundScores.furkan.categoryScores.Name").value(10))
+				.andExpect(jsonPath("$.roundScores.furkan.categoryScores.City").value(10))
+				.andExpect(jsonPath("$.roundScores.furkan.totalScore").value(20));
+	}
+
+	@Test
+	void playerCannotSubmitAnswersTwice() throws Exception {
+		String roomCode = createRoom();
+		roomService.joinRoom(roomCode, "furkan");
+		roomService.startGame(roomCode, "furkan");
+
+		mockMvc.perform(post("/rooms/{roomCode}/answers", roomCode)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"username\":\"furkan\",\"answers\":{\"Name\":\"Ada\"}}"))
+				.andExpect(status().isOk());
+
+		mockMvc.perform(post("/rooms/{roomCode}/answers", roomCode)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"username\":\"furkan\",\"answers\":{\"Name\":\"Ayse\"}}"))
+				.andExpect(status().isConflict());
+	}
+
+	@Test
+	void getRoundScoresReturnsCalculatedScores() throws Exception {
+		String roomCode = createRoom();
+		roomService.joinRoom(roomCode, "furkan");
+		roomService.joinRoom(roomCode, "ada");
+		roomService.startGame(roomCode, "furkan");
+		roomService.submitAnswers(roomCode, "furkan", java.util.Map.of(
+				"Name", "Ada",
+				"City", ""));
+		roomService.submitAnswers(roomCode, "ada", java.util.Map.of(
+				"Name", "ada",
+				"City", "Ankara"));
+
+		mockMvc.perform(get("/rooms/{roomCode}/scores", roomCode))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.roomCode").value(roomCode))
+				.andExpect(jsonPath("$.roundScores.furkan.categoryScores.Name").value(5))
+				.andExpect(jsonPath("$.roundScores.furkan.categoryScores.City").value(0))
+				.andExpect(jsonPath("$.roundScores.furkan.totalScore").value(5))
+				.andExpect(jsonPath("$.roundScores.ada.categoryScores.Name").value(5))
+				.andExpect(jsonPath("$.roundScores.ada.categoryScores.City").value(10))
+				.andExpect(jsonPath("$.roundScores.ada.totalScore").value(15));
+	}
+
+	@Test
+	void hostCanStartNextRoundAndPreserveTotalScores() throws Exception {
+		String roomCode = createRoom();
+		roomService.joinRoom(roomCode, "furkan");
+		roomService.joinRoom(roomCode, "ada");
+		roomService.startGame(roomCode, "furkan");
+		roomService.submitAnswers(roomCode, "furkan", java.util.Map.of("Name", "Ada"));
+		roomService.submitAnswers(roomCode, "ada", java.util.Map.of("Name", "ada"));
+		roomService.getRoom(roomCode).finishRound();
+
+		mockMvc.perform(post("/rooms/{roomCode}/next-round", roomCode)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"username\":\"furkan\"}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.roomCode").value(roomCode))
+				.andExpect(jsonPath("$.gameStatus").value("IN_PROGRESS"))
+				.andExpect(jsonPath("$.selectedLetter", matchesPattern("[A-Z]")))
+				.andExpect(jsonPath("$.totalScores.furkan").value(5))
+				.andExpect(jsonPath("$.totalScores.ada").value(5));
+
+		mockMvc.perform(get("/rooms/{roomCode}", roomCode))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.gameStatus").value("IN_PROGRESS"))
+				.andExpect(jsonPath("$.submittedPlayers").isEmpty())
+				.andExpect(jsonPath("$.answersByPlayer").isEmpty())
+				.andExpect(jsonPath("$.totalScores.furkan").value(5))
+				.andExpect(jsonPath("$.totalScores.ada").value(5));
+	}
+
+	@Test
+	void nonHostCannotStartNextRound() throws Exception {
+		String roomCode = createRoom();
+		roomService.joinRoom(roomCode, "furkan");
+		roomService.joinRoom(roomCode, "ada");
+		roomService.startGame(roomCode, "furkan");
+		roomService.getRoom(roomCode).finishRound();
+
+		mockMvc.perform(post("/rooms/{roomCode}/next-round", roomCode)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"username\":\"ada\"}"))
+				.andExpect(status().isForbidden());
+	}
+
+	@Test
 	void joinRoomRejectsUnknownRoomCode() throws Exception {
 		mockMvc.perform(post("/rooms/{roomCode}/join", "ABC123")
 						.contentType(MediaType.APPLICATION_JSON)

@@ -3,12 +3,10 @@ package com.furkan.kelimeoyunu.room;
 import java.util.List;
 import java.util.Map;
 
-public record RoomDetailsResponse(
+public record SubmitAnswersResponse(
 		String roomCode,
-		List<String> players,
-		String host,
-		GameState gameStatus,
-		Map<String, Map<String, String>> answersByPlayer,
+		String username,
+		Map<String, String> answers,
 		List<String> submittedPlayers,
 		Map<String, PlayerRoundScore> roundScores,
 		Map<String, Integer> totalScores) {

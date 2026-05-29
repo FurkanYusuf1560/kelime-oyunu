@@ -4,14 +4,17 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 
 import com.furkan.kelimeoyunu.room.Room;
+import com.furkan.kelimeoyunu.room.RoundScorer;
 
 @Component
 public class RoomEventPublisher {
 
 	private final SimpMessagingTemplate messagingTemplate;
+	private final RoundScorer roundScorer;
 
-	public RoomEventPublisher(SimpMessagingTemplate messagingTemplate) {
+	public RoomEventPublisher(SimpMessagingTemplate messagingTemplate, RoundScorer roundScorer) {
 		this.messagingTemplate = messagingTemplate;
+		this.roundScorer = roundScorer;
 	}
 
 	public void playerJoined(Room room, String username) {
@@ -42,6 +45,14 @@ public class RoomEventPublisher {
 		publish(RoomEventType.GAME_ENDED, room, room.finishedByUsername());
 	}
 
+	public void answersSubmitted(Room room, String username) {
+		publish(RoomEventType.ANSWERS_SUBMITTED, room, username);
+	}
+
+	public void nextRoundStarted(Room room, String username) {
+		publish(RoomEventType.NEXT_ROUND_STARTED, room, username);
+	}
+
 	private void publish(RoomEventType type, Room room, String username) {
 		messagingTemplate.convertAndSend("/topic/room/" + room.code(), new RoomEvent(
 				type,
@@ -53,6 +64,10 @@ public class RoomEventPublisher {
 				room.selectedLetter(),
 				room.finishedByUsername(),
 				room.remainingSeconds(),
-				room.players()));
+				room.submittedPlayers(),
+				room.players(),
+				room.answersByPlayer(),
+				roundScorer.calculate(room),
+				room.totalScores()));
 	}
 }

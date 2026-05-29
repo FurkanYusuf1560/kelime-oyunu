@@ -32,25 +32,31 @@ public class RoomService {
 	private final RoomEventPublisher roomEventPublisher;
 	private final TaskScheduler taskScheduler;
 	private final int countdownSeconds;
+	private final RoundScorer roundScorer;
 
 	@Autowired
-	public RoomService(RoomEventPublisher roomEventPublisher, TaskScheduler roomTaskScheduler) {
-		this(Clock.systemUTC(), roomEventPublisher, roomTaskScheduler, COUNTDOWN_SECONDS);
+	public RoomService(RoomEventPublisher roomEventPublisher, TaskScheduler roomTaskScheduler, RoundScorer roundScorer) {
+		this(Clock.systemUTC(), roomEventPublisher, roomTaskScheduler, COUNTDOWN_SECONDS, roundScorer);
 	}
 
 	RoomService(Clock clock) {
-		this(clock, null, null, COUNTDOWN_SECONDS);
+		this(clock, null, null, COUNTDOWN_SECONDS, new RoundScorer());
 	}
 
 	RoomService(Clock clock, RoomEventPublisher roomEventPublisher) {
-		this(clock, roomEventPublisher, null, COUNTDOWN_SECONDS);
+		this(clock, roomEventPublisher, null, COUNTDOWN_SECONDS, new RoundScorer());
 	}
 
 	RoomService(Clock clock, RoomEventPublisher roomEventPublisher, TaskScheduler taskScheduler, int countdownSeconds) {
+		this(clock, roomEventPublisher, taskScheduler, countdownSeconds, new RoundScorer());
+	}
+
+	RoomService(Clock clock, RoomEventPublisher roomEventPublisher, TaskScheduler taskScheduler, int countdownSeconds, RoundScorer roundScorer) {
 		this.clock = clock;
 		this.roomEventPublisher = roomEventPublisher;
 		this.taskScheduler = taskScheduler;
 		this.countdownSeconds = countdownSeconds;
+		this.roundScorer = roundScorer;
 	}
 
 	public Room createRoom() {
@@ -164,7 +170,7 @@ public class RoomService {
 			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only host can start the game");
 		}
 
-		if (!room.startGame(generateLetter())) {
+		if (!room.startGame(generateLetter(null))) {
 			throw new ResponseStatusException(HttpStatus.CONFLICT, "Game already started");
 		}
 
@@ -198,6 +204,68 @@ public class RoomService {
 		return room;
 	}
 
+	public Room submitAnswers(String roomCode, String username, Map<String, String> answers) {
+		Room room = getRoom(roomCode);
+
+		if (username == null || username.isBlank()) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Username is required");
+		}
+
+		String normalizedUsername = username.trim();
+		if (!room.hasPlayer(normalizedUsername)) {
+			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only room players can submit answers");
+		}
+
+		if (room.gameState() != GameState.IN_PROGRESS) {
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "Game is not in progress");
+		}
+
+		if (!room.submitAnswers(normalizedUsername, answers)) {
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "Answers already submitted");
+		}
+
+		publishAnswersSubmitted(room, normalizedUsername);
+		return room;
+	}
+
+	public Room startNextRound(String roomCode, String username) {
+		Room room = getRoom(roomCode);
+
+		if (username == null || username.isBlank()) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Username is required");
+		}
+
+		String normalizedUsername = username.trim();
+		if (!room.hasPlayer(normalizedUsername)) {
+			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only room players can start the next round");
+		}
+
+		if (!normalizedUsername.equalsIgnoreCase(room.hostUsername())) {
+			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only host can start the next round");
+		}
+
+		if (room.gameState() != GameState.FINISHED) {
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "Round is not finished");
+		}
+
+		cancelTimer(room.code());
+		Map<String, PlayerRoundScore> roundScores = calculateRoundScores(room);
+		if (!room.startNextRound(generateLetter(room.selectedLetter()), roundScores)) {
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "Round is not finished");
+		}
+
+		publishNextRoundStarted(room, normalizedUsername);
+		return room;
+	}
+
+	public Map<String, PlayerRoundScore> calculateRoundScores(String roomCode) {
+		return roundScorer.calculate(getRoom(roomCode));
+	}
+
+	public Map<String, PlayerRoundScore> calculateRoundScores(Room room) {
+		return roundScorer.calculate(room);
+	}
+
 	private String generateRoomCode() {
 		StringBuilder code = new StringBuilder(CODE_LENGTH);
 
@@ -208,8 +276,12 @@ public class RoomService {
 		return code.toString();
 	}
 
-	private String generateLetter() {
-		return String.valueOf(LETTER_CHARACTERS.charAt(random.nextInt(LETTER_CHARACTERS.length())));
+	private String generateLetter(String excludedLetter) {
+		String letter = String.valueOf(LETTER_CHARACTERS.charAt(random.nextInt(LETTER_CHARACTERS.length())));
+		while (letter.equals(excludedLetter)) {
+			letter = String.valueOf(LETTER_CHARACTERS.charAt(random.nextInt(LETTER_CHARACTERS.length())));
+		}
+		return letter;
 	}
 
 	private void scheduleCountdown(Room room) {
@@ -292,6 +364,18 @@ public class RoomService {
 	private void publishGameEnded(Room room) {
 		if (roomEventPublisher != null) {
 			roomEventPublisher.gameEnded(room);
+		}
+	}
+
+	private void publishAnswersSubmitted(Room room, String username) {
+		if (roomEventPublisher != null) {
+			roomEventPublisher.answersSubmitted(room, username);
+		}
+	}
+
+	private void publishNextRoundStarted(Room room, String username) {
+		if (roomEventPublisher != null) {
+			roomEventPublisher.nextRoundStarted(room, username);
 		}
 	}
 }

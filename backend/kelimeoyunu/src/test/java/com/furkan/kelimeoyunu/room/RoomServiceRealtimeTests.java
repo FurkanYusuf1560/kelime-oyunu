@@ -10,6 +10,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Map;
 import java.util.concurrent.ScheduledFuture;
 
 import org.assertj.core.api.Assertions;
@@ -83,5 +84,115 @@ class RoomServiceRealtimeTests {
 		verify(publisher).timerUpdated(updatedRoom);
 		verify(publisher).gameEnded(updatedRoom);
 		verify(scheduledFuture).cancel(false);
+	}
+
+	@Test
+	void submitAnswersStoresAnswersAndBroadcastsSubmission() {
+		Room room = roomService.createRoom();
+		roomService.joinRoom(room.code(), "furkan");
+		roomService.startGame(room.code(), "furkan");
+
+		Room updatedRoom = roomService.submitAnswers(room.code(), "furkan", Map.of(
+				"Name", " Ada ",
+				"City", "Ankara"));
+
+		Assertions.assertThat(updatedRoom.answersByPlayer().get("furkan"))
+				.containsEntry("Name", "Ada")
+				.containsEntry("City", "Ankara");
+		Assertions.assertThat(updatedRoom.submittedPlayers()).containsExactly("furkan");
+		verify(roomEventPublisher).answersSubmitted(updatedRoom, "furkan");
+	}
+
+	@Test
+	void submitAnswersRejectsDuplicateSubmission() {
+		Room room = roomService.createRoom();
+		roomService.joinRoom(room.code(), "furkan");
+		roomService.startGame(room.code(), "furkan");
+		roomService.submitAnswers(room.code(), "furkan", Map.of("Name", "Ada"));
+
+		Assertions.assertThatThrownBy(() -> roomService.submitAnswers(room.code(), "furkan", Map.of("Name", "Ayse")))
+				.isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+				.hasMessageContaining("Answers already submitted");
+	}
+
+	@Test
+	void calculateRoundScoresComparesAllPlayerAnswers() {
+		Room room = roomService.createRoom();
+		roomService.joinRoom(room.code(), "furkan");
+		roomService.joinRoom(room.code(), "ada");
+		roomService.joinRoom(room.code(), "efe");
+		roomService.startGame(room.code(), "furkan");
+		roomService.submitAnswers(room.code(), "furkan", Map.of(
+				"Name", " Ada ",
+				"City", "Ankara",
+				"Animal", ""));
+		roomService.submitAnswers(room.code(), "ada", Map.of(
+				"Name", "ada",
+				"City", "Izmir",
+				"Animal", "Ari"));
+		roomService.submitAnswers(room.code(), "efe", Map.of(
+				"Name", "Ali",
+				"City", "",
+				"Animal", "Ari"));
+
+		Map<String, PlayerRoundScore> roundScores = roomService.calculateRoundScores(room.code());
+
+		Assertions.assertThat(roundScores.get("furkan").categoryScores())
+				.containsEntry("Name", 5)
+				.containsEntry("City", 10)
+				.containsEntry("Animal", 0);
+		Assertions.assertThat(roundScores.get("furkan").totalScore()).isEqualTo(15);
+		Assertions.assertThat(roundScores.get("ada").categoryScores())
+				.containsEntry("Name", 5)
+				.containsEntry("City", 10)
+				.containsEntry("Animal", 5);
+		Assertions.assertThat(roundScores.get("ada").totalScore()).isEqualTo(20);
+		Assertions.assertThat(roundScores.get("efe").categoryScores())
+				.containsEntry("Name", 10)
+				.containsEntry("City", 0)
+				.containsEntry("Animal", 5);
+		Assertions.assertThat(roundScores.get("efe").totalScore()).isEqualTo(15);
+	}
+
+	@Test
+	void startNextRoundResetsSubmissionsGeneratesLetterAndPreservesTotalScores() {
+		Room room = roomService.createRoom();
+		roomService.joinRoom(room.code(), "furkan");
+		roomService.joinRoom(room.code(), "ada");
+		roomService.startGame(room.code(), "furkan");
+		String firstLetter = room.selectedLetter();
+		roomService.submitAnswers(room.code(), "furkan", Map.of(
+				"Name", "Ada",
+				"City", "Ankara"));
+		roomService.submitAnswers(room.code(), "ada", Map.of(
+				"Name", "ada",
+				"City", ""));
+		room.finishRound();
+
+		Room nextRoundRoom = roomService.startNextRound(room.code(), "furkan");
+
+		Assertions.assertThat(nextRoundRoom.gameState()).isEqualTo(GameState.IN_PROGRESS);
+		Assertions.assertThat(nextRoundRoom.selectedLetter()).matches("[A-Z]");
+		Assertions.assertThat(nextRoundRoom.selectedLetter()).isNotNull();
+		Assertions.assertThat(firstLetter).isNotNull();
+		Assertions.assertThat(nextRoundRoom.answersByPlayer()).isEmpty();
+		Assertions.assertThat(nextRoundRoom.submittedPlayers()).isEmpty();
+		Assertions.assertThat(nextRoundRoom.finishedByUsername()).isNull();
+		Assertions.assertThat(nextRoundRoom.remainingSeconds()).isZero();
+		Assertions.assertThat(nextRoundRoom.totalScores())
+				.containsEntry("furkan", 15)
+				.containsEntry("ada", 5);
+		verify(roomEventPublisher).nextRoundStarted(nextRoundRoom, "furkan");
+	}
+
+	@Test
+	void startNextRoundRequiresFinishedRound() {
+		Room room = roomService.createRoom();
+		roomService.joinRoom(room.code(), "furkan");
+		roomService.startGame(room.code(), "furkan");
+
+		Assertions.assertThatThrownBy(() -> roomService.startNextRound(room.code(), "furkan"))
+				.isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+				.hasMessageContaining("Round is not finished");
 	}
 }

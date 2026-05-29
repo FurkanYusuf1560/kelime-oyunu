@@ -60,6 +60,16 @@ public class RoomWebSocketController {
 		roomService.playerFinished(message.roomCode(), message.username());
 	}
 
+	@MessageMapping("/answers")
+	public void submitAnswers(SubmitAnswersMessage message) {
+		roomService.submitAnswers(message.roomCode(), message.username(), message.answers());
+	}
+
+	@MessageMapping("/next-round")
+	public void startNextRound(NextRoundMessage message) {
+		roomService.startNextRound(message.roomCode(), message.username());
+	}
+
 	@EventListener
 	public void disconnect(SessionDisconnectEvent event) {
 		RoomPresence presence = presenceRegistry.remove(event.getSessionId());

@@ -4,6 +4,7 @@
   --text: #5e6573;
   --text-h: #111827;
   --bg: #f7f8fb;
+  --bg-soft: #eef4f2;
   --border: #dfe4ed;
   --code-bg: #f4f3ec;
   --accent: #0f766e;
@@ -17,15 +18,22 @@
   --button-soft-border: #b7d9d4;
   --success: #13795b;
   --danger: #b42318;
+  --danger-bg: #fff1f0;
+  --danger-border: #ffcdc7;
   --social-bg: rgba(244, 243, 236, 0.5);
   --shadow:
     rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --panel-shadow:
+    rgba(17, 24, 39, 0.06) 0 16px 40px -24px, rgba(17, 24, 39, 0.05) 0 4px 12px -8px;
+  --button-shadow: rgba(15, 118, 110, 0.22) 0 10px 18px -12px;
+  --focus-shadow: rgba(15, 118, 110, 0.14) 0 18px 42px -26px;
+  --surface-glow: rgba(15, 118, 110, 0.11);
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --sans: Inter, ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif;
+  --heading: Inter, ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
 
-  font: 18px/145% var(--sans);
+  font: 17px/150% var(--sans);
   letter-spacing: 0;
   color-scheme: light dark;
   color: var(--text);
@@ -45,6 +53,7 @@
     --text: #b5bdc9;
     --text-h: #f7fafc;
     --bg: #111416;
+    --bg-soft: #0d1113;
     --border: #2d3639;
     --code-bg: #1f2028;
     --accent: #5eead4;
@@ -58,9 +67,16 @@
     --button-soft-border: #23655e;
     --success: #5eead4;
     --danger: #fca5a5;
+    --danger-bg: rgba(127, 29, 29, 0.32);
+    --danger-border: rgba(252, 165, 165, 0.4);
     --social-bg: rgba(47, 48, 58, 0.5);
     --shadow:
       rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+    --panel-shadow:
+      rgba(0, 0, 0, 0.34) 0 18px 42px -24px, rgba(0, 0, 0, 0.32) 0 8px 22px -16px;
+    --button-shadow: rgba(45, 212, 191, 0.24) 0 10px 18px -12px;
+    --focus-shadow: rgba(94, 234, 212, 0.16) 0 18px 42px -26px;
+    --surface-glow: rgba(45, 212, 191, 0.08);
   }
 
   #social .button-icon {
@@ -82,7 +98,7 @@ body {
 h1,
 h2 {
   font-family: var(--heading);
-  font-weight: 500;
+  font-weight: 650;
   color: var(--text-h);
 }
 
@@ -99,7 +115,7 @@ h1 {
 h2 {
   font-size: 24px;
   line-height: 118%;
-  letter-spacing: -0.24px;
+  letter-spacing: 0;
   margin: 0 0 8px;
   @media (max-width: 1024px) {
     font-size: 20px;

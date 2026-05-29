@@ -42,7 +42,11 @@ public class RoomController {
 				room.code(),
 				room.players(),
 				room.hostUsername(),
-				room.gameState()));
+				room.gameState(),
+				room.answersByPlayer(),
+				room.submittedPlayers(),
+				roomService.calculateRoundScores(room),
+				room.totalScores()));
 	}
 
 	@PostMapping("/rooms/{roomCode}/start")
@@ -52,5 +56,33 @@ public class RoomController {
 				room.code(),
 				room.gameState(),
 				room.selectedLetter()));
+	}
+
+	@PostMapping("/rooms/{roomCode}/answers")
+	public ResponseEntity<SubmitAnswersResponse> submitAnswers(@PathVariable String roomCode, @RequestBody SubmitAnswersRequest request) {
+		Room room = roomService.submitAnswers(roomCode, request.username(), request.answers());
+		return ResponseEntity.ok(new SubmitAnswersResponse(
+				room.code(),
+				request.username().trim(),
+				room.answersForPlayer(request.username()),
+				room.submittedPlayers(),
+				roomService.calculateRoundScores(room),
+				room.totalScores()));
+	}
+
+	@GetMapping("/rooms/{roomCode}/scores")
+	public ResponseEntity<RoundScoresResponse> getRoundScores(@PathVariable String roomCode) {
+		Room room = roomService.getRoom(roomCode);
+		return ResponseEntity.ok(new RoundScoresResponse(room.code(), roomService.calculateRoundScores(roomCode), room.totalScores()));
+	}
+
+	@PostMapping("/rooms/{roomCode}/next-round")
+	public ResponseEntity<NextRoundResponse> startNextRound(@PathVariable String roomCode, @RequestBody NextRoundRequest request) {
+		Room room = roomService.startNextRound(roomCode, request.username());
+		return ResponseEntity.ok(new NextRoundResponse(
+				room.code(),
+				room.gameState(),
+				room.selectedLetter(),
+				room.totalScores()));
 	}
 }

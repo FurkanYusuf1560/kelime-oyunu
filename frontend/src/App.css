@@ -9,6 +9,24 @@
   gap: 40px;
 }
 
+.page-shell {
+  background:
+    radial-gradient(circle at 20% 10%, var(--surface-glow), transparent 32rem),
+    linear-gradient(180deg, var(--bg), var(--bg-soft));
+}
+
+.animate-in {
+  animation: fade-up 0.42s ease both;
+}
+
+.delay-1 {
+  animation-delay: 0.08s;
+}
+
+.delay-2 {
+  animation-delay: 0.14s;
+}
+
 .intro {
   max-width: 720px;
   text-align: left;
@@ -34,6 +52,7 @@
   margin-top: 18px;
   color: var(--text);
   font-size: 18px;
+  line-height: 1.65;
 }
 
 .room-actions {
@@ -48,11 +67,21 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel-bg);
+  box-shadow: var(--panel-shadow);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 20px;
   text-align: left;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.room-panel:focus-within {
+  border-color: var(--accent-border);
+  box-shadow: var(--focus-shadow);
 }
 
 .room-panel h2 {
@@ -86,11 +115,16 @@
   box-sizing: border-box;
   font: inherit;
   letter-spacing: 0;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease;
 }
 
 .join-panel input:focus {
   border-color: var(--accent);
-  outline: 3px solid var(--accent-bg);
+  box-shadow: 0 0 0 4px var(--accent-bg);
+  outline: 0;
 }
 
 .primary-button,
@@ -103,6 +137,8 @@
   font: 700 16px/1 var(--sans);
   letter-spacing: 0;
   transition:
+    background-color 0.2s ease,
+    box-shadow 0.2s ease,
     opacity 0.2s ease,
     transform 0.2s ease;
 }
@@ -121,6 +157,7 @@
 .primary-button:hover,
 .secondary-button:hover {
   transform: translateY(-1px);
+  box-shadow: var(--button-shadow);
 }
 
 .primary-button:disabled,
@@ -130,11 +167,35 @@
   transform: none;
 }
 
+.primary-button:focus-visible,
+.secondary-button:focus-visible,
+.copy-button:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 4px var(--accent-bg);
+}
+
+.button-content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.loading-spinner {
+  width: 1em;
+  height: 1em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  animation: spin 0.8s linear infinite;
+}
+
 .result-box {
-  min-height: 104px;
+  min-height: 132px;
   padding: 18px;
   border-radius: 8px;
   background: var(--result-bg);
+  border: 1px solid transparent;
   box-sizing: border-box;
   display: grid;
   place-content: center;
@@ -148,18 +209,107 @@
   font-family: var(--mono);
   font-size: 36px;
   line-height: 1;
-  letter-spacing: 2px;
+  letter-spacing: 0;
+}
+
+.copy-button {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--button-soft-border);
+  border-radius: 6px;
+  color: var(--button-bg);
+  background: var(--button-soft-bg);
+  cursor: pointer;
+  font: 700 13px/1 var(--sans);
+  transition:
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.copy-button:hover {
+  transform: translateY(-1px);
+}
+
+.assistive-message {
+  color: var(--success);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .join-message {
-  min-height: 24px;
+  min-height: 42px;
+  padding: 0;
+  border-radius: 6px;
   color: var(--success);
   font-weight: 700;
+  display: flex;
+  align-items: center;
 }
 
 .join-message.error,
 .result-box.error {
   color: var(--danger);
+}
+
+.join-message.error {
+  padding: 10px 12px;
+  border: 1px solid var(--danger-border);
+  background: var(--danger-bg);
+}
+
+.result-box.error {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+
+.player-row {
+  animation: fade-up 0.28s ease both;
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.player-row:hover {
+  border-color: var(--accent-border);
+  transform: translateY(-1px);
+}
+
+.score-table-wrap {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.score-table-wrap table {
+  background: var(--panel-bg);
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 @media (max-width: 760px) {
@@ -180,6 +330,11 @@
   .room-panel {
     min-height: auto;
     padding: 22px;
+  }
+
+  .primary-button,
+  .secondary-button {
+    min-height: 48px;
   }
 
   .result-box strong {
